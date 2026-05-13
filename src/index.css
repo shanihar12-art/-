@@ -246,7 +246,8 @@
 
 /* Scrollable area for screens */
 .screen-scroll {
-  height: calc(100vh - 72px);
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }

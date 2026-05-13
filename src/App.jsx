@@ -88,33 +88,37 @@ export default function App() {
               user={user}
               onLogout={handleLogout}
             />
-            <div className="flex-1 overflow-hidden">
-              <AnimatePresence mode="wait" custom={direction}>
+            <div className="flex-1 overflow-hidden relative">
+              <AnimatePresence custom={direction}>
                 {currentScreen === 'upload' && (
                   <motion.div key="upload" custom={direction}
                     variants={pageVariants} initial="initial" animate="animate" exit="exit"
-                    transition={pageTransition} className="h-full">
+                    transition={pageTransition}
+                    className="absolute inset-0">
                     <UploadScreen onDataLoaded={handleDataLoaded} user={user} />
                   </motion.div>
                 )}
                 {currentScreen === 'dashboard' && (
                   <motion.div key="dashboard" custom={direction}
                     variants={pageVariants} initial="initial" animate="animate" exit="exit"
-                    transition={pageTransition} className="h-full">
+                    transition={pageTransition}
+                    className="absolute inset-0">
                     <DashboardScreen data={financialData} user={user} onUpload={() => navigateTo('upload')} />
                   </motion.div>
                 )}
                 {currentScreen === 'insights' && (
                   <motion.div key="insights" custom={direction}
                     variants={pageVariants} initial="initial" animate="animate" exit="exit"
-                    transition={pageTransition} className="h-full">
+                    transition={pageTransition}
+                    className="absolute inset-0">
                     <InsightsScreen data={financialData} onUpload={() => navigateTo('upload')} />
                   </motion.div>
                 )}
                 {currentScreen === 'erd' && (
                   <motion.div key="erd" custom={direction}
                     variants={pageVariants} initial="initial" animate="animate" exit="exit"
-                    transition={pageTransition} className="h-full">
+                    transition={pageTransition}
+                    className="absolute inset-0">
                     <ERDScreen />
                   </motion.div>
                 )}
