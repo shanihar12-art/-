@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDropzone } from 'react-dropzone'
 import {
   Upload, FileSpreadsheet, CheckCircle, AlertCircle,
-  Download, CreditCard, FileText, FileType
+  Download, Sparkles, CreditCard, FileText, FileType
 } from 'lucide-react'
 import { parseExcelFile } from '../utils/excelParser'
 import { analyzeFinances } from '../utils/financialAnalyzer'
