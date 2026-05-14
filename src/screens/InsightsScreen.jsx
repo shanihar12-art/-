@@ -6,8 +6,7 @@ import {
   Calendar, Sparkles, Target, ArrowLeft, ArrowRight, ChevronDown, ChevronUp,
   Upload, Lightbulb, TrendingDown, DollarSign
 } from 'lucide-react'
-import { analyzeFinances, catHe } from '../utils/financialAnalyzer'
-import { DEMO_DATA } from '../utils/excelParser'
+import { catHe } from '../utils/financialAnalyzer'
 
 const fmt = (n) => `₪${Number(n).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`
 
@@ -137,7 +136,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 export default function InsightsScreen({ data, onUpload }) {
-  const d = data || analyzeFinances(DEMO_DATA)
+  const d = data
 
   if (!d) return (
     <div className="flex flex-col items-center justify-center h-full gap-4">

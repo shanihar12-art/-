@@ -9,7 +9,6 @@ import {
   BarChart2, Upload, ArrowUpRight, ArrowDownRight
 } from 'lucide-react'
 import { analyzeFinances, CATEGORY_COLORS, catHe } from '../utils/financialAnalyzer'
-import { DEMO_DATA } from '../utils/excelParser'
 
 const fmt = (n) => `₪${Number(n).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`
 const fmtDec = (n) => `₪${Number(n).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -110,7 +109,7 @@ function HeatmapRow({ data }) {
 }
 
 export default function DashboardScreen({ data, onUpload }) {
-  const d = data || analyzeFinances(DEMO_DATA)
+  const d = data
   const [activeCategory, setActiveCategory] = useState(null)
 
   if (!d) return (

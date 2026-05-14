@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDropzone } from 'react-dropzone'
 import {
   Upload, FileSpreadsheet, CheckCircle, AlertCircle,
-  Download, Sparkles, Image, CreditCard, FileText, FileType
+  Download, CreditCard, FileText, FileType
 } from 'lucide-react'
-import { parseExcelFile, DEMO_DATA } from '../utils/excelParser'
+import { parseExcelFile } from '../utils/excelParser'
 import { analyzeFinances } from '../utils/financialAnalyzer'
 import { getHistory } from '../utils/authStore'
 import { extractTextFromPDF, parseTransactionsFromText } from '../utils/pdfParser'
@@ -38,18 +38,9 @@ export default function UploadScreen({ onDataLoaded, user }) {
   }
 
   const processImage = async (file) => {
-    const url = URL.createObjectURL(file)
-    setImagePreview(url)
     setFileName(file.name)
-    setStage('uploading')
-    setProgress(0)
-    for (let p = 0; p <= 40; p += 8) { await new Promise(r => setTimeout(r, 100)); setProgress(p) }
-    setStage('parsing')
-    for (let p = 40; p <= 100; p += 6) { await new Promise(r => setTimeout(r, 90)); setProgress(p) }
-    setRowCount(DEMO_DATA.length)
-    setStage('success')
-    await new Promise(r => setTimeout(r, 1000))
-    onDataLoaded(analyzeFinances(DEMO_DATA))
+    setErrorMsg('ניתוח תמונות אינו נתמך כרגע. אנא העלה קובץ PDF או אקסל/CSV.')
+    setStage('error')
   }
 
   const processPDF = async (file) => {
@@ -63,7 +54,12 @@ export default function UploadScreen({ onDataLoaded, user }) {
       const text     = await extractTextFromPDF(file)
       for (let p = 20; p <= 70; p += 5) { await new Promise(r => setTimeout(r, 60)); setProgress(p) }
       const expenses = parseTransactionsFromText(text)
-      const data     = expenses.length >= 3 ? expenses : DEMO_DATA
+      if (expenses.length < 3) {
+        setErrorMsg(`לא נמצאו עסקאות ב-PDF (${expenses.length} נמצאו). ודא שהקובץ הוא דף פירוט דיגיטלי מהבנק/כרטיס אשראי.`)
+        setStage('error')
+        return
+      }
+      const data = expenses
       for (let p = 70; p <= 100; p += 6) { await new Promise(r => setTimeout(r, 50)); setProgress(p) }
       setRowCount(data.length)
       setStage('success')
@@ -75,16 +71,7 @@ export default function UploadScreen({ onDataLoaded, user }) {
     }
   }
 
-  const useDemoData = async () => {
-    setFileName('נתוני_הדגמה_אפריל_2026.xlsx')
-    setStage('uploading'); setProgress(0)
-    for (let p = 0; p <= 100; p += 15) { await new Promise(r => setTimeout(r, 60)); setProgress(p) }
-    setRowCount(DEMO_DATA.length); setStage('success')
-    await new Promise(r => setTimeout(r, 800))
-    onDataLoaded(analyzeFinances(DEMO_DATA))
-  }
-
-  const onDropExcel = useCallback((accepted) => { if (accepted.length) processExcel(accepted[0]) }, [])
+const onDropExcel = useCallback((accepted) => { if (accepted.length) processExcel(accepted[0]) }, [])
   const onDropImage = useCallback((accepted) => {
     if (!accepted.length) return
     const file = accepted[0]
@@ -201,19 +188,16 @@ export default function UploadScreen({ onDataLoaded, user }) {
           </AnimatePresence>
         </motion.div>
 
-        {/* כפתורי עזר */}
-        <motion.div className="mt-5 grid grid-cols-2 gap-4"
-          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-          <button onClick={useDemoData} disabled={!isIdle}
-            className="flex items-center justify-center gap-2 p-4 rounded-2xl font-medium text-sm transition-all duration-200"
-            style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.2)', color: '#0EA5E9' }}>
-            <Sparkles size={16} /> השתמש בנתוני הדגמה
-          </button>
-          <button className="flex items-center justify-center gap-2 p-4 rounded-2xl font-medium text-sm transition-all duration-200"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: '#475569' }}>
-            <Download size={16} /> הורד תבנית
-          </button>
-        </motion.div>
+        {/* כפתור הורד תבנית */}
+        {activeTab === 'excel' && (
+          <motion.div className="mt-5 flex justify-center"
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+            <button className="flex items-center gap-2 px-5 py-3 rounded-2xl font-medium text-sm transition-all duration-200"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: '#475569' }}>
+              <Download size={16} /> הורד תבנית אקסל
+            </button>
+          </motion.div>
+        )}
 
         {/* היסטוריית העלאות */}
         {history.length > 0 && (
