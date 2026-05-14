@@ -17,7 +17,9 @@ export default function UploadScreen({ onDataLoaded, user }) {
   const [fileName, setFileName] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [rowCount, setRowCount] = useState(0)
-  const [imagePreview, setImagePreview] = useState(null)
+  const [imagePreview, setImagePreview]   = useState(null)
+  const [pdfDebug, setPdfDebug]           = useState(null)   // { lines, found, usedDemo }
+  const [pendingData, setPendingData]     = useState(null)   // מחכה ללחיצה לפני מעבר
 
   const history = user ? getHistory(user.id) : []
 
@@ -55,28 +57,30 @@ export default function UploadScreen({ onDataLoaded, user }) {
   const processPDF = async (file) => {
     setFileName(file.name)
     setImagePreview(null)
+    setPdfDebug(null)
     setStage('uploading')
     setProgress(0)
     for (let p = 0; p <= 20; p += 5) { await new Promise(r => setTimeout(r, 80)); setProgress(p) }
     setStage('parsing')
     try {
-      // Try real PDF text extraction
       const text     = await extractTextFromPDF(file)
       for (let p = 20; p <= 70; p += 5) { await new Promise(r => setTimeout(r, 60)); setProgress(p) }
       const expenses = parseTransactionsFromText(text)
-      const data     = expenses.length >= 3 ? expenses : DEMO_DATA
+      const usedDemo = expenses.length < 3
+      const data     = usedDemo ? DEMO_DATA : expenses
+      // Save first 30 lines + stats for debug panel
+      const lines30  = text.split(/[\n\r]+/).filter(Boolean).slice(0, 30)
       for (let p = 70; p <= 100; p += 6) { await new Promise(r => setTimeout(r, 50)); setProgress(p) }
       setRowCount(data.length)
       setStage('success')
-      await new Promise(r => setTimeout(r, 900))
-      onDataLoaded(analyzeFinances(data))
-    } catch {
-      // Fallback to demo data if PDF.js unavailable
+      setPdfDebug({ lines: lines30, found: expenses.length, usedDemo })
+      setPendingData(analyzeFinances(data))   // ← מחכה ללחיצה, לא מנווט מיד
+    } catch (err) {
+      setPdfDebug({ lines: [`שגיאה: ${err.message}`], found: 0, usedDemo: true })
       for (let p = 20; p <= 100; p += 8) { await new Promise(r => setTimeout(r, 70)); setProgress(p) }
       setRowCount(DEMO_DATA.length)
       setStage('success')
-      await new Promise(r => setTimeout(r, 900))
-      onDataLoaded(analyzeFinances(DEMO_DATA))
+      setPendingData(analyzeFinances(DEMO_DATA))
     }
   }
 
@@ -120,7 +124,7 @@ export default function UploadScreen({ onDataLoaded, user }) {
 
   const reset = () => {
     setStage('idle'); setProgress(0); setErrorMsg(''); setFileName('')
-    setImagePreview(null)
+    setImagePreview(null); setPdfDebug(null); setPendingData(null)
   }
 
   const isIdle = stage === 'idle' || stage === 'error'
@@ -219,6 +223,41 @@ export default function UploadScreen({ onDataLoaded, user }) {
             <Download size={16} /> הורד תבנית
           </button>
         </motion.div>
+
+        {/* פאנל דיבאג PDF — מחכה לאישור לפני מעבר לדשבורד */}
+        {pdfDebug && (
+          <motion.div className="mt-5 glass rounded-2xl p-5"
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <p className="text-sm font-semibold"
+                style={{ color: pdfDebug.usedDemo ? '#F59E0B' : '#10B981' }}>
+                {pdfDebug.usedDemo
+                  ? `⚠️ נמצאו ${pdfDebug.found} עסקאות בלבד — הוצגו נתוני הדגמה`
+                  : `✅ נמצאו ${pdfDebug.found} עסקאות מה-PDF`}
+              </p>
+              {pendingData && (
+                <button onClick={() => onDataLoaded(pendingData)}
+                  className="btn-gold px-5 py-2 rounded-xl text-sm font-bold">
+                  המשך לדשבורד ←
+                </button>
+              )}
+            </div>
+
+            <p className="text-xs mb-2" style={{ color: '#475569' }}>
+              📋 טקסט גולמי שחולץ מה-PDF (שורות ראשונות):
+            </p>
+            <div className="rounded-xl p-3 text-xs font-mono"
+              style={{ background: 'rgba(0,0,0,0.35)', color: '#64748B',
+                       maxHeight: 220, overflowY: 'auto', direction: 'ltr', whiteSpace: 'pre-wrap' }}>
+              {pdfDebug.lines.length === 0
+                ? '(לא חולץ טקסט — ייתכן שה-PDF סרוק/תמונה)'
+                : pdfDebug.lines.map((l, i) => (
+                    <div key={i}><span style={{ color: '#334155' }}>{i + 1}│ </span>{l}</div>
+                  ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* היסטוריית העלאות */}
         {history.length > 0 && (
