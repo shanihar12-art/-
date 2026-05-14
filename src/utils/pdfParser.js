@@ -1,82 +1,120 @@
-// PDF.js loaded from CDN — no npm install needed
-const PDFJS_URL    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.mjs'
-const WORKER_URL   = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+// PDF.js served locally from /public/pdfjs/ — no CDN dependency
+// Files are loaded relative to the app base URL (works in dev + GitHub Pages)
 
 let _lib = null
 
 async function getPdfjs() {
   if (_lib) return _lib
-  _lib = await import(/* @vite-ignore */ PDFJS_URL)
-  _lib.GlobalWorkerOptions.workerSrc = WORKER_URL
+  const base = import.meta.env.BASE_URL          // '/' in dev, '/-/' in prod
+  _lib = await import(/* @vite-ignore */ `${base}pdfjs/pdf.mjs`)
+  _lib.GlobalWorkerOptions.workerSrc = `${base}pdfjs/pdf.worker.mjs`
   return _lib
 }
 
-// ── Extract raw text from PDF file ────────────────────────────
+// ── Extract raw text lines from PDF ──────────────────────────
 export async function extractTextFromPDF(file) {
-  const lib = await getPdfjs()
+  const lib    = await getPdfjs()
   const buffer = await file.arrayBuffer()
   const pdf    = await lib.getDocument({ data: buffer }).promise
 
-  const pageTexts = []
+  const allLines = []
   for (let i = 1; i <= pdf.numPages; i++) {
     const page    = await pdf.getPage(i)
     const content = await page.getTextContent()
-    // keep items sorted by Y then X so lines read left-to-right
-    const sorted  = [...content.items].sort((a, b) =>
-      Math.round(b.transform[5] / 5) * 5 - Math.round(a.transform[5] / 5) * 5 ||
-      a.transform[4] - b.transform[4]
-    )
-    pageTexts.push(sorted.map(it => it.str).join(' '))
+
+    // Group items into lines by their Y position
+    const byY = {}
+    for (const item of content.items) {
+      if (!item.str?.trim()) continue
+      const y = Math.round(item.transform[5])
+      if (!byY[y]) byY[y] = []
+      byY[y].push({ x: item.transform[4], str: item.str })
+    }
+
+    // Sort Y descending (top of page first), then X ascending (left to right)
+    const sortedYs = Object.keys(byY)
+      .map(Number)
+      .sort((a, b) => b - a)
+
+    for (const y of sortedYs) {
+      const line = byY[y]
+        .sort((a, b) => a.x - b.x)
+        .map(it => it.str)
+        .join(' ')
+        .trim()
+      if (line) allLines.push(line)
+    }
   }
-  return pageTexts.join('\n')
+
+  return allLines.join('\n')
 }
 
-// ── Parse transaction rows from extracted text ────────────────
+// ── Parse transactions from extracted text ────────────────────
 export function parseTransactionsFromText(text) {
   const lines    = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean)
   const expenses = []
 
-  // Patterns
-  const dateRx   = /\b(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{2,4})\b/
-  const amountRx = /\b(\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)\b/g
+  // Date patterns: DD/MM/YYYY  DD/MM/YY  DD.MM.YYYY  YYYY-MM-DD
+  const dateRx = [
+    /\b(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{4})\b/,
+    /\b(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{2})\b/,
+    /\b(\d{4})[\/\.\-](\d{1,2})[\/\.\-](\d{1,2})\b/,
+  ]
+
+  // Grab every money-like number: 1,234.56 / 1234.56 / 1,234 / 1234
+  const moneyRx = /\b\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?\b/g
+
+  // Lines to skip (totals, headers, footers)
+  const skipRx  = /סה[""כ]|סהכ|total|balance|יתרה|הכנסות|תאריך|פירוט|סכום|מינוס|page|עמוד|\*\*\*/i
 
   for (const line of lines) {
-    const dateMatch = line.match(dateRx)
-    if (!dateMatch) continue
+    if (skipRx.test(line) || line.length < 5) continue
 
-    // Collect all number-like tokens as candidate amounts
-    const amounts = [...line.matchAll(amountRx)]
-      .map(m => parseFloat(m[1].replace(/,/g, '')))
-      .filter(n => n >= 1 && n < 100_000)
+    // Try each date pattern
+    let dm = null, yr4
+    for (const rx of dateRx) {
+      dm = line.match(rx)
+      if (dm) break
+    }
+    if (!dm) continue
 
-    if (amounts.length === 0) continue
+    // Resolve year
+    let day, month, year
+    if (dm[3].length === 4 || dm[1].length === 4) {
+      // YYYY-MM-DD
+      if (dm[1].length === 4) { year = +dm[1]; month = +dm[2]; day = +dm[3] }
+      else                    { day  = +dm[1]; month = +dm[2]; year = +dm[3] }
+    } else {
+      day   = +dm[1]
+      month = +dm[2]
+      year  = 2000 + +dm[3]
+    }
+    if (month < 1 || month > 12 || day < 1 || day > 31) continue
+    if (year  < 2010 || year > 2035)                     continue
 
-    // Heuristic: largest number that isn't the year is the amount
-    const year4 = dateMatch[3].length === 4 ? parseInt(dateMatch[3]) : null
-    const amount = amounts
-      .filter(n => n !== year4)
-      .sort((a, b) => b - a)[0]
+    // Collect candidate amounts
+    const nums = [...line.matchAll(moneyRx)]
+      .map(m => parseFloat(m[0].replace(/,/g, '')))
+      .filter(n => n >= 1 && n < 100_000 && n !== year && n !== day && n !== month)
 
-    if (!amount) continue
+    if (!nums.length) continue
 
-    // Description = everything except date tokens and the amount
+    // Heuristic: last number is usually the charge amount
+    const amount = nums[nums.length - 1]
+
+    // Description: remove the matched date and the amount, clean up
     let desc = line
-      .replace(dateRx, '')
-      .replace(new RegExp(amount.toString().replace('.', '\\.'), 'g'), '')
+      .replace(dm[0], '')
+      .replace(new RegExp(
+        amount.toLocaleString('en-US').replace('.', '\\.') + '|' +
+        Math.round(amount).toString(),
+        'g'
+      ), '')
       .replace(/[₪$€,]/g, '')
       .replace(/\s{2,}/g, ' ')
       .trim()
 
     if (!desc || desc.length < 2) desc = 'עסקה'
-
-    const day   = parseInt(dateMatch[1])
-    const month = parseInt(dateMatch[2])
-    const year  = dateMatch[3].length === 2
-      ? 2000 + parseInt(dateMatch[3])
-      : parseInt(dateMatch[3])
-
-    if (month < 1 || month > 12 || day < 1 || day > 31) continue
-    if (year < 2000 || year > 2030) continue
 
     expenses.push({
       id:          `pdf_${expenses.length + 1}`,
