@@ -61,6 +61,26 @@ export async function extractTextFromPDF(file) {
   return allLines.join('\n')
 }
 
+// ── Category detection for PDF transactions ───────────────────
+const CATEGORY_RULES = [
+  [/אופנה|ריהוט|קניות|זארה|zara|asos|amazon|h&m|fox|castro|renuar|golf|bug|ksp|ikea|מדמוזל|ביגוד/i, 'Shopping'],
+  [/מזון|סופרמרקט|שופרסל|רמי לוי|יינות|מגה|ויקטורי|אושר|shufersal|rami|mega|victory|makolet|fresh market/i, 'Groceries'],
+  [/מסעדה|קפה|אוכל|ארומה|בורגר|פיצה|סושי|שווארמה|aroma|burger|pizza|sushi|restaurant|cafe|kitchen|bistro|benedict|shakshuka/i, 'Food & Dining'],
+  [/דלק|חניה|סונול|פז|דור|sonol|paz|delek|uber|gett|bolt|taxi|parking|תחנת|רב.קו|אוטובוס|רכבת/i, 'Transportation'],
+  [/בידור|נטפליקס|ספוטיפיי|netflix|spotify|hot vod|cinema|קולנוע|steam|playstation|xbox|concert|תיאטרון/i, 'Entertainment'],
+  [/ביטוח|אינטרנט|טלפון|חשמל|מים|בזק|bezeq|cellcom|partner|pelephone|orange|hot|yes|openai|chatgpt|חשבים|עיריה|ארנונה|מקורות/i, 'Bills & Utilities'],
+  [/רופא|בית.חולים|קופת.חולים|כושר|ספורט|פארם|gym|sport|maccabi|clalit|leumit|pharm|clinic/i, 'Health & Fitness'],
+  [/אוניברסיטה|מכללה|קורס|ספר|שכר.לימוד|udemy|coursera|technion|university/i, 'Education'],
+  [/מלון|טיסה|booking|airbnb|אל.על|el.al|hotel|flight|airport/i, 'Travel'],
+]
+
+function detectCategoryFromText(text) {
+  for (const [rx, cat] of CATEGORY_RULES) {
+    if (rx.test(text)) return cat
+  }
+  return 'other'
+}
+
 // ── Parse transactions from text ───────────────────────────────
 export function parseTransactionsFromText(text) {
   const lines    = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean)
@@ -96,32 +116,33 @@ export function parseTransactionsFromText(text) {
 
     // כאל PDFs are RTL → after LTR-sort by X, the charge amount ("סכום חיוב")
     // always appears FIRST in the extracted line (it's the leftmost column).
-    // Using nums[0] avoids picking the full installment amount or foreign amount.
     const amount = nums[0]
 
-    let desc = line
-      .replace(dm[0], '')
-    // remove all extracted numbers so they don't pollute the description
-    nums.forEach(n => {
-      desc = desc.replace(new RegExp(`\\b${String(n).replace('.', '\\.')}\\b`, 'g'), '')
-    })
+    // Clean description: remove date, all numbers, currency symbols, common filler
+    let desc = line.replace(dm[0], '')
     desc = desc
+      .replace(/\b\d+(?:[.,]\d+)?\b/g, '')  // remove all numbers
       .replace(/[₪$€,]/g, '')
-      .replace(/\bלא\b/g, '')   // כרטיס column value
+      .replace(/\bלא\b/g, '')               // כרטיס column filler
+      .replace(/\bתשלום\b/g, '')            // installment label
+      .replace(/\bמ-/g, '')
       .replace(/\s{2,}/g, ' ')
       .trim()
     if (!desc || desc.length < 2) desc = 'עסקה'
 
+    const category = detectCategoryFromText(desc)
+    const dateObj  = new Date(year, month - 1, day)
+
     expenses.push({
       id:          `pdf_${expenses.length + 1}`,
-      date:        new Date(year, month - 1, day),
-      dateStr:     `${String(day).padStart(2,'0')}/${String(month).padStart(2,'0')}/${year}`,
+      date:        dateObj,
+      dateStr:     `${String(year)}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,
       day, month, year,
-      weekday:     new Date(year, month - 1, day).getDay(),
+      weekday:     dateObj.getDay(),
       amount,
       description: desc,
-      category:    'other',
-      merchant:    desc.split(/\s+/)[0] || 'לא ידוע',
+      category,
+      merchant:    desc.trim().split(/\s+/).slice(-1)[0] || desc,
     })
   }
 
