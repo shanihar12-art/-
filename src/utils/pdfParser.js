@@ -94,12 +94,20 @@ export function parseTransactionsFromText(text) {
       .filter(n => n >= 1 && n < 100_000 && n !== year && n !== day && n !== month)
     if (!nums.length) continue
 
-    const amount = nums[nums.length - 1]
+    // כאל PDFs are RTL → after LTR-sort by X, the charge amount ("סכום חיוב")
+    // always appears FIRST in the extracted line (it's the leftmost column).
+    // Using nums[0] avoids picking the full installment amount or foreign amount.
+    const amount = nums[0]
 
     let desc = line
       .replace(dm[0], '')
-      .replace(new RegExp(String(amount).replace('.', '\\.'), 'g'), '')
+    // remove all extracted numbers so they don't pollute the description
+    nums.forEach(n => {
+      desc = desc.replace(new RegExp(`\\b${String(n).replace('.', '\\.')}\\b`, 'g'), '')
+    })
+    desc = desc
       .replace(/[₪$€,]/g, '')
+      .replace(/\bלא\b/g, '')   // כרטיס column value
       .replace(/\s{2,}/g, ' ')
       .trim()
     if (!desc || desc.length < 2) desc = 'עסקה'
